@@ -84,7 +84,6 @@ Topics covered:
 ## Repository Structure
 
 financial-engineering-projects/
-│
 ├── README.md
 ├── requirements.txt
 ├── data/
@@ -93,13 +92,11 @@ financial-engineering-projects/
 │   ├── portfolio_optimizer.ipynb
 │   ├── market_crash_simulator.ipynb
 │   └── volatility_forecasting.ipynb
-│
 ├── src/
 │   ├── options/
 │   ├── portfolio/
 │   ├── risk/
 │   └── volatility/
-│
 ├── tests/
 ├── reports/
 └── figures/
