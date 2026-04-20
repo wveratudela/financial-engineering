@@ -6,8 +6,6 @@ from scipy.stats import norm
 
 
 
-
-
 plt.style.use('default')
 TEAL  = '#00ffcc'
 AMBER = '#ffb300'

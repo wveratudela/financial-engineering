@@ -2,7 +2,6 @@
 
 A collection of financial engineering projects covering derivatives pricing, portfolio optimization, risk simulation, and volatility forecasting using Python.
 
----
 
 ## Overview
 
@@ -17,7 +16,6 @@ Each project combines:
 
 The goal is to build projects that are both educational and professional enough to showcase to recruiters, hiring managers, and quantitative teams.
 
----
 
 ## Projects
 
@@ -34,7 +32,6 @@ Topics covered:
 - Volatility sensitivity
 - Price convergence
 
----
 
 ### 2. Portfolio Optimizer
 
@@ -49,7 +46,6 @@ Topics covered:
 - Convex optimization with constraints
 - Position sizing and allocation rules
 
----
 
 ### 3. Market Crash Simulator
 
@@ -64,7 +60,6 @@ Topics covered:
 - Value at Risk (VaR)
 - Conditional Value at Risk (CVaR)
 
----
 
 ### 4. Volatility Forecasting
 
@@ -79,7 +74,6 @@ Topics covered:
 - Forecast evaluation
 - Volatility clustering
 
----
 
 ## Repository Structure
 
@@ -103,7 +97,6 @@ financial-engineering-projects/
 └── figures/
 ```
 
----
 
 ## Tech Stack
 
@@ -121,7 +114,6 @@ Main libraries expected to be used across the repo:
 - yfinance
 - Jupyter
 
----
 
 ## Goals
 
@@ -135,7 +127,6 @@ This repo is meant to demonstrate:
 - Clean Python structure
 - Reusable code design
 
----
 
 ## Future Improvements
 
@@ -150,9 +141,7 @@ Potential upgrades include:
 - LSTM volatility forecasting
 - Interactive dashboards
 
----
 
 ## Disclaimer
 
 These projects are for educational and research purposes only. They are not financial advice and should not be used for live trading without further validation, testing, and risk controls.
-
