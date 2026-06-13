@@ -1,346 +1,382 @@
-import pandas as pd
+"""
+optimizer.py
+============
+Project F2 — Portfolio Optimizer (with Constraints)
+Reusable functions and PortfolioOptimizer class implementing Markowitz MPT
+with cvxpy-based quadratic programming.
+"""
+
 import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd
+import cvxpy as cp
 import yfinance as yf
-import seaborn as sns
-from statsmodels.tsa.stattools import adfuller, coint
-from sklearn.linear_model import LinearRegression
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+from scipy.optimize import minimize
 
 
-def check_data(df1, df2):
+# ─────────────────────────────────────────────
+# Data
+# ─────────────────────────────────────────────
 
-    result = adfuller(df1['Close'])
-    print(f"V ADF: {result[0]:.4f}, p-value: {result[1]:.4f}")
-    if result[1] < 0.05:
-        print(f"- - - - - WARNING: p-value: {result[1]:.4f} < 5% - - - - -")
-    
-    result = adfuller(df2['Close'])
-    print(f"MA ADF: {result[0]:.4f}, p-value: {result[1]:.4f}")
-    if result[1] < 0.05:
-        print(f"- - - - - WARNING: p-value: {result[1]:.4f} < 5% - - - - -")
-    
-    score, p_value, critical_values = coint(df1['Close'], df2['Close'])
-    print(f"Cointegration p-value: {p_value:.4f}")
-    if p_value > 0.05:
-        print(f"- - - - - WARNING: p-value: {p_value:.4f} > 5% - - - - -")
-    print(f"Critical values: {critical_values}")
-    
+def fetch_returns(tickers: list[str], start: str, end: str) -> pd.DataFrame:
+    """
+    Pull adjusted close prices via yfinance and compute daily log returns.
 
-def check_signals(df1, df2):
+    Parameters
+    ----------
+    tickers : list of ticker strings, e.g. ['SPY', 'GLD', 'BTC-USD']
+    start   : start date string 'YYYY-MM-DD'
+    end     : end date string   'YYYY-MM-DD'
 
-    # Regress V on MA
-    X = df2['Close'].values.reshape(-1, 1)
-    y = df1['Close'].values
-    
-    model = LinearRegression().fit(X, y)
-    beta = model.coef_[0]
-    print(f"Hedge ratio β: {beta:.4f}")
-    
-    r2 = model.score(X, y)
-    print(f"R²: {r2:.4f}")
-    if r2 < 0.95:
-        print(f"- - - - - WARNING: p-value: {p_value:.4f} < 95% - - - - -")
-
-    x_line = np.linspace(X.min(), X.max(), 200).reshape(-1, 1)
-    y_line = model.predict(x_line)
-    
-    spread = df1['Close'] - beta * df2['Close']
-
-    print(f"Spread mean: {spread.mean():.4f}")
-    print(f"Spread std: {spread.std():.4f}")
+    Returns
+    -------
+    pd.DataFrame of daily log returns, shape (T, N), columns = tickers
+    """
+    raw = yf.download(tickers, start=start, end=end, auto_adjust=True, progress=False)["Close"]
+    if isinstance(raw, pd.Series):          # single ticker edge case
+        raw = raw.to_frame(tickers[0])
+    raw = raw[tickers]                       # preserve requested order
+    log_returns = np.log(raw / raw.shift(1)).dropna()
+    return log_returns
 
 
-    # Visualize the signals to check for correlation and spread
-    plt.figure(figsize=(18, 6))
-    colors = sns.color_palette("colorblind")
-    
-    plt.subplot(1, 2, 1)
-    plt.scatter(X, y, color=colors[0], label='Prices')      # Scatter of original data
-    plt.plot(x_line, y_line, color='k', linewidth=2, label='Fit',linestyle='--')      # Regression line
-    plt.title('MA & V correlation of values')
-    plt.xlabel('MA')
-    plt.ylabel('V')
-    plt.grid(True, alpha=0.3)
-    plt.legend()
-    
-    plt.subplot(1, 2, 2)
-    plt.plot(spread, linewidth=1)
-    plt.axhline(spread.mean(), color='black', linewidth=0.8, linestyle='--', alpha=0.75, label='Mean')
-    plt.axhline(spread.mean()+spread.std(), color='black', linewidth=1, linestyle='--', alpha=0.5, label='+1 std', )
-    plt.axhline(spread.mean()-spread.std(), color='black', linewidth=1, linestyle='--', alpha=0.5, label='-1 std')
-    plt.title('V - 0.55 × MA Spread')
-    plt.xlabel('Year')
-    plt.ylabel('Spread')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+def compute_stats(returns: pd.DataFrame, trading_days: int = 252) -> dict:
+    """
+    Compute annualised mean vector μ and covariance matrix Σ.
 
-    plt.show()
+    Parameters
+    ----------
+    returns      : daily log-return DataFrame
+    trading_days : annualisation factor (default 252)
 
-    
-    rolling_mean = spread.rolling(window=252).mean()
-    rolling_std = spread.rolling(window=60).std()
-    z_score = (spread - rolling_mean) / rolling_std
-    
-    s = z_score
-    signal = pd.Series(0, index=s.index)
-    
-    state = 0
-    
-    for i in range(1, len(s)):
-        if state == 0:
-            if s.iloc[i] > 2:
-                state = 1
-            elif s.iloc[i] < -2:
-                state = -1
-    
-        elif state == 1 and s.iloc[i] < 0:
-            state = 0
-    
-        elif state == -1 and s.iloc[i] > 0:
-            state = 0
-    
-        signal.iloc[i] = state
-    
-    plt.figure(figsize=(18, 6))
-    colors = sns.color_palette("colorblind")
-
-    plt.subplot(1, 2, 1)
-    plt.plot(z_score, linewidth=1, label='Z-score')
-    plt.axhline(2, color='red', linestyle='--', linewidth=1, label='+2')
-    plt.axhline(-2, color='green', linestyle='--', linewidth=1, label='-2')
-    plt.axhline(0, color='black', linestyle='--', linewidth=0.8)
-    plt.title('Z-score of V/MA Spread (60d std, 252d mean)')
-    plt.xlabel('Year')
-    plt.ylabel('z-score')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-
-    plt.subplot(1, 2, 2)
-    plt.plot(signal)    
-    plt.title('Long/Short signal (1 = Long MA/Short V. -1 = Long V/Short MA)')
-    plt.xlabel('Year')
-    plt.ylabel('Signal')
-    plt.grid(True, alpha=0.3)
-    plt.show()
-
-    return signal
+    Returns
+    -------
+    dict with keys:
+        'mu'    : np.ndarray, shape (N,)  — annualised expected returns
+        'sigma' : np.ndarray, shape (N,N) — annualised covariance matrix
+        'tickers': list of str
+    """
+    mu    = returns.mean().values * trading_days
+    sigma = returns.cov().values  * trading_days
+    return {"mu": mu, "sigma": sigma, "tickers": list(returns.columns)}
 
 
-def run_pairs_trading(df1, df2, signal, starting_capital):
+# ─────────────────────────────────────────────
+# Optimizer
+# ─────────────────────────────────────────────
 
-    cash = starting_capital
-    port_val = 0
-    long_shares = 0
-    short_shares = 0
-    short_proceeds = 0
-    long_leg = 0
-    short_leg = 0
-    
-    index = np.arange(len(signal))   # or use your real index
-    df = pd.DataFrame({'Signal': signal}, index=df1.index)
-    df.index = pd.to_datetime(df.index)
-    
-    long_shares_list = []
-    short_shares_list = []
-    long_leg_list = []
-    short_leg_list = []
-    port_val_list = []
-    cash_list = []
-    
-    for i in range(len(signal)):
-        sig = signal.iloc[i]
-        price_1 = df1['Close'].iloc[i]
-        price_2 = df2['Close'].iloc[i]
-        
-        if sig == 1 and signal.iloc[i-1] == 0: # long_spread
-            long_shares = (cash/2) // price_2
-            short_shares = (cash/2) // price_1
-    
-            long_leg = long_shares * price_2
-            short_proceeds = short_shares * price_1
-           
-            cash -= long_leg
-            cash += short_proceeds
-            port_val = long_leg + short_proceeds
-    
-        elif sig == 0 and signal.iloc[i-1] == 1: # none - reset
-            long_leg = long_shares * price_2
-            short_leg = short_shares * price_1
-    
-            cash += long_leg
-            cash -= short_leg
-            
-            long_shares = 0
-            short_shares = 0
-            short_proceeds = 0
-            port_val = 0
-    
-        elif sig == -1 and signal.iloc[i-1] == 0: # long_spread
-            long_shares = (cash/2) // price_1
-            short_shares = (cash/2) // price_2
-    
-            long_leg = long_shares * price_1
-            short_proceeds = short_shares * price_2
-            
-            cash -= long_leg
-            cash += short_proceeds
-            port_val = long_leg + short_proceeds
-    
-        elif sig == 0 and signal.iloc[i-1] == -1: # none - reset
-            long_leg = long_shares * price_1
-            short_leg = short_shares * price_2
-    
-            cash += long_leg
-            cash -= short_leg
-            
-            long_shares = 0
-            short_shares = 0
-            short_proceeds = 0
-            port_val = 0
-    
-        if sig == 1 and signal.iloc[i-1] == 1:  # holding: long MA, short V
-            long_leg = long_shares * price_2
-            short_leg = short_proceeds - short_shares * price_1
-            port_val = long_leg + short_leg
-    
-        elif sig == -1 and signal.iloc[i-1] == -1:  # holding: long V, short MA
-            long_leg = long_shares * price_1
-            short_leg = short_proceeds - short_shares * price_2
-            port_val = long_leg + short_leg
-        else:
-            port_val = 0
-    
-        
-        long_shares_list.append(long_shares)
-        short_shares_list.append(short_shares)
-        long_leg_list.append(long_leg)
-        short_leg_list.append(short_leg)
-        port_val_list.append(port_val)
-        cash_list.append(cash)
-    
-    
-    df['Long_Shares'] = long_shares_list
-    df['Short_Shares'] = short_shares_list
-    df['Long_Leg'] = long_leg_list
-    df['Short_Leg'] = short_leg_list
-    df['Portfolio_Value'] = port_val_list
-    df['Cash'] = cash_list
-    df['Total'] = df['Cash'] + df['Portfolio_Value']
+class PortfolioOptimizer:
+    """
+    Markowitz mean-variance optimizer with position-size constraints.
 
-    return df
-  
-    
-def compute_metrics(df,starting_capital):
+    Parameters
+    ----------
+    mu        : annualised expected return vector, shape (N,)
+    sigma     : annualised covariance matrix, shape (N,N)
+    tickers   : list of asset names (length N)
+    """
 
-    df = df.copy()
+    def __init__(self, mu: np.ndarray, sigma: np.ndarray, tickers: list[str]):
+        self.mu      = np.array(mu, dtype=float)
+        self.sigma   = np.array(sigma, dtype=float)
+        self.tickers = tickers
+        self.n       = len(mu)
 
-    if 'Close' in df.columns:
-        df['Buy_Hold'] = (starting_capital / df['Close'].iloc[0]) * df['Close']
-    else:
-        df['Buy_Hold'] = df['Cash']
-        
-    trading_days = 252
-    risk_free_rate = 4/100
-    rf_daily = risk_free_rate / trading_days
-    years = (df.index[-1] - df.index[0]).days / 365.25
-    
-    #Buy Hold
-    Total_return = (df.iloc[-1]['Buy_Hold']-starting_capital)/starting_capital
-    
-    tot_log_returns = np.log(df['Buy_Hold'] / df['Buy_Hold'].shift(1))
-    excess_return = tot_log_returns - rf_daily
-    mu = excess_return.mean()
-    sigma = excess_return.std()
-    Sharpe_ratio = (mu / sigma) * np.sqrt(trading_days)
-    
-    df['Running_Max'] = df['Buy_Hold'].cummax()
-    df['Drawdown'] = df['Buy_Hold'] / df['Running_Max'] - 1
-    Maximum_drawdown = df['Drawdown'].min()
+    # ── internal solver ──────────────────────────────────────────────────────
 
-    start_val = df['Buy_Hold'].iloc[0]
-    end_val   = df['Buy_Hold'].iloc[-1]
-    CAGR = (end_val / start_val) ** (1 / years) - 1
-    
-    Calmar = CAGR / Maximum_drawdown
+    def _solve_min_variance(
+        self,
+        max_weight: float = 1.0,
+        target_return: float | None = None,
+    ) -> np.ndarray | None:
+        """
+        Solve QP:  min w'Σw  s.t. 1'w=1, 0≤w≤max_weight, [w'μ≥target]
+        Returns weight vector or None if infeasible.
+        """
+        w = cp.Variable(self.n)
+        risk = cp.quad_form(w, self.sigma)
+        constraints = [
+            cp.sum(w) == 1,
+            w >= 0,
+            w <= max_weight,
+        ]
+        if target_return is not None:
+            constraints.append(self.mu @ w >= target_return)
 
-    df['Year'] = df.index.year
-    yearly_start = df.groupby('Year')['Buy_Hold'].first()
-    yearly_end   = df.groupby('Year')['Buy_Hold'].last()
-    days = df.groupby('Year').apply(lambda x: (x.index[-1] - x.index[0]).days,
-    include_groups=False)
-    annualized = (yearly_end / yearly_start) ** (365.25 / days) - 1
+        prob = cp.Problem(cp.Minimize(risk), constraints)
+        prob.solve(solver=cp.OSQP, warm_starting=True)
 
-    yearly_df = pd.DataFrame({
-    'Start': yearly_start,
-    'End': yearly_end,
-    'Days': days,
-    'Annualized': annualized
-    })
+        if prob.status not in ("optimal", "optimal_inaccurate"):
+            return None
+        return w.value
 
-    if 'Close' in df.columns:
-        data = {
-        'Buy Hold': [Total_return, Sharpe_ratio, Maximum_drawdown, CAGR, Calmar]
+    # ── public API ────────────────────────────────────────────────────────────
+
+    def min_variance(self, max_weight: float = 1.0) -> dict:
+        """
+        Compute the global minimum-variance portfolio.
+
+        Returns
+        -------
+        dict: weights, expected_return, volatility, sharpe (rf=0)
+        """
+        w = self._solve_min_variance(max_weight=max_weight)
+        if w is None:
+            raise RuntimeError("min_variance: QP infeasible")
+        return self._portfolio_stats(w, label="Min-Variance")
+
+    def max_sharpe(self, rf: float = 0.05, max_weight: float = 1.0) -> dict:
+        """
+        Compute the maximum-Sharpe portfolio via sequential minimisation
+        of the negative Sharpe ratio (scipy.optimize.minimize SLSQP).
+
+        Parameters
+        ----------
+        rf         : risk-free rate (annualised)
+        max_weight : upper bound per asset
+
+        Returns
+        -------
+        dict: weights, expected_return, volatility, sharpe
+        """
+        def neg_sharpe(w):
+            ret  = self.mu @ w
+            vol  = np.sqrt(w @ self.sigma @ w)
+            return -(ret - rf) / (vol + 1e-12)
+
+        constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1}]
+        bounds      = [(0, max_weight)] * self.n
+        w0          = np.full(self.n, 1 / self.n)
+
+        res = minimize(neg_sharpe, w0, method="SLSQP",
+                       bounds=bounds, constraints=constraints,
+                       options={"ftol": 1e-12, "maxiter": 1000})
+        if not res.success:
+            raise RuntimeError(f"max_sharpe: optimiser failed — {res.message}")
+        return self._portfolio_stats(res.x, label="Max-Sharpe", rf=rf)
+
+    def efficient_frontier(
+        self,
+        n_points: int = 60,
+        max_weight: float = 1.0,
+    ) -> pd.DataFrame:
+        """
+        Sweep target returns and solve min-variance at each point to
+        trace the efficient frontier.
+
+        Returns
+        -------
+        pd.DataFrame with columns: expected_return, volatility, sharpe, weights
+        """
+        # Feasible return range: between min-var return and max achievable
+        mv_w   = self._solve_min_variance(max_weight=max_weight)
+        mu_min = float(self.mu @ mv_w)
+        mu_max = float(np.max(self.mu))
+        targets = np.linspace(mu_min, mu_max * 0.99, n_points)
+
+        rows = []
+        for t in targets:
+            w = self._solve_min_variance(max_weight=max_weight, target_return=t)
+            if w is None:
+                continue
+            vol  = float(np.sqrt(w @ self.sigma @ w))
+            ret  = float(self.mu @ w)
+            rows.append({
+                "expected_return": ret,
+                "volatility":      vol,
+                "sharpe":          ret / (vol + 1e-12),
+                "weights":         w,
+            })
+        return pd.DataFrame(rows)
+
+    def random_portfolios(self, n: int = 5000) -> pd.DataFrame:
+        """
+        Monte Carlo scatter — sample random weight vectors.
+
+        Returns
+        -------
+        pd.DataFrame with columns: expected_return, volatility, sharpe
+        """
+        results = []
+        for _ in range(n):
+            w = np.random.dirichlet(np.ones(self.n))
+            ret = float(self.mu @ w)
+            vol = float(np.sqrt(w @ self.sigma @ w))
+            results.append({"expected_return": ret, "volatility": vol,
+                            "sharpe": ret / (vol + 1e-12)})
+        return pd.DataFrame(results)
+
+    # ── helpers ───────────────────────────────────────────────────────────────
+
+    def _portfolio_stats(self, w: np.ndarray, label: str = "", rf: float = 0.0) -> dict:
+        ret  = float(self.mu @ w)
+        vol  = float(np.sqrt(w @ self.sigma @ w))
+        shrp = (ret - rf) / (vol + 1e-12)
+        return {
+            "label":           label,
+            "weights":         dict(zip(self.tickers, w)),
+            "expected_return": ret,
+            "volatility":      vol,
+            "sharpe":          shrp,
         }
-    else:
-        data = {
-        'Pairs': [Total_return, Sharpe_ratio, Maximum_drawdown, CAGR, Calmar]
-        }    
-    
-    
-    index = ['Total Return', 'Sharpe', 'Max Drawdown', 'CAGR', 'Calmar']
-    
-    comparison_table = pd.DataFrame(data, index=index)
 
-    return df, comparison_table, yearly_df
 
-    
-def plot_performance(dataV,dataM,dataS,dataP,yV,yM,yS,yP):
+# ─────────────────────────────────────────────
+# Plotting
+# ─────────────────────────────────────────────
 
-    plt.figure(figsize=(18, 6))
-    colors = sns.color_palette("colorblind")
-    
-    plt.subplot(1, 3, 1)
-    plt.title('Equity curve')
-    plt.plot(dataV.index, dataV['Buy_Hold'], color=colors[0], label='Buy_Hold V', linewidth=1)
-    plt.plot(dataM.index, dataM['Buy_Hold'], color=colors[1], label='Buy_Hold MA', linewidth=1)
-    plt.plot(dataS.index, dataS['Buy_Hold'], color=colors[2], label='Buy_Hold SPY', linewidth=1)    
-    plt.plot(dataS.index, dataP['Total'], color='k', label='Pairs V/MA', linewidth=1.5)    
+DARK_BG   = "#0d1117"
+PANEL_BG  = "#161b22"
+TEAL      = "#00d4aa"
+AMBER     = "#f0a500"
+RED       = "#ff4d6d"
+GREY      = "#8b949e"
+WHITE     = "#e6edf3"
 
-    plt.grid(True, alpha=0.3)
-    plt.xlabel('Date')
-    plt.ylabel('Value')
-    plt.legend()
-    
-    plt.subplot(1, 3, 2)
-    plt.title('Drawdown chart')
-    plt.plot(dataV.index, dataV['Drawdown'], color=colors[0], label='Buy_Hold V', linewidth=1)
-    plt.plot(dataM.index, dataM['Drawdown'], color=colors[1], label='Buy_Hold MA', linewidth=1)
-    plt.plot(dataS.index, dataS['Drawdown'], color=colors[2], label='Buy_Hold SPY', linewidth=1)    
-    plt.plot(dataS.index, dataP['Drawdown'], color='k', label='Pairs V/MA', linewidth=1.5)    
+_STYLE = {
+    "figure.facecolor": DARK_BG,
+    "axes.facecolor":   PANEL_BG,
+    "axes.edgecolor":   GREY,
+    "axes.labelcolor":  WHITE,
+    "axes.titlecolor":  WHITE,
+    "xtick.color":      GREY,
+    "ytick.color":      GREY,
+    "grid.color":       "#21262d",
+    "text.color":       WHITE,
+    "font.family":      "monospace",
+}
 
-    plt.grid(True, alpha=0.3)
-    plt.xlabel('Date')
-    plt.ylabel('Drawdown')
-    plt.legend()
-    
-    plt.subplot(1, 3, 3)
-    plt.title('Annual returns bar chart')
-    
-    years = yP.index
-    x = np.arange(len(years))
-    width = 0.2
-    
-    plt.bar(x - 1.5*width, yV['Annualized'], width, label='V', color=colors[0])
-    plt.bar(x - 0.5*width, yM['Annualized'], width, label='MA', color=colors[1])
-    plt.bar(x + 0.5*width, yS['Annualized'], width, label='SPY', color=colors[2])
-    plt.bar(x + 1.5*width, yP['Annualized'], width, label='Pairs', color='k')
-    plt.axhline(y=0, color='black', linewidth=0.8, linestyle='--')
-    plt.xticks(x[::2], years[::2])             # replace numeric x with year labels, showing every second tick to avoid overlapping
-    plt.grid(axis='y', alpha=0.3)
-    plt.xlabel('Year')
-    plt.ylabel('Return')
-    
-    plt.legend()
-    
-    plt.tight_layout()
-    plt.show()
+
+def plot_frontier(
+    frontier:   pd.DataFrame,
+    max_sharpe: dict,
+    min_vol:    dict,
+    random_portfolios: pd.DataFrame | None = None,
+    rf: float = 0.05,
+    save_path: str | None = None,
+) -> plt.Figure:
+    """
+    Efficient frontier chart with Monte Carlo scatter background.
+
+    Parameters
+    ----------
+    frontier           : output of optimizer.efficient_frontier()
+    max_sharpe         : output of optimizer.max_sharpe()
+    min_vol            : output of optimizer.min_variance()
+    random_portfolios  : output of optimizer.random_portfolios() (optional)
+    rf                 : risk-free rate used for Sharpe colouring
+    save_path          : if given, save figure to this path
+    """
+    with plt.rc_context(_STYLE):
+        fig, ax = plt.subplots(figsize=(11, 7))
+
+        # — Monte Carlo scatter
+        if random_portfolios is not None:
+            sc = ax.scatter(
+                random_portfolios["volatility"],
+                random_portfolios["expected_return"],
+                c=random_portfolios["sharpe"],
+                cmap="plasma", alpha=0.25, s=6, zorder=1,
+            )
+            cbar = fig.colorbar(sc, ax=ax, pad=0.01)
+            cbar.set_label("Sharpe Ratio", color=WHITE, fontsize=9)
+            cbar.ax.yaxis.set_tick_params(color=GREY)
+            plt.setp(cbar.ax.yaxis.get_ticklabels(), color=GREY, fontsize=8)
+
+        # — Efficient frontier line
+        ax.plot(
+            frontier["volatility"],
+            frontier["expected_return"],
+            color=TEAL, lw=2.5, zorder=3, label="Efficient Frontier",
+        )
+
+        # — Capital Market Line
+        mv_vol  = min_vol["volatility"]
+        ms_ret  = max_sharpe["expected_return"]
+        ms_vol  = max_sharpe["volatility"]
+        cml_x   = np.linspace(0, ms_vol * 1.6, 100)
+        slope   = (ms_ret - rf) / ms_vol
+        cml_y   = rf + slope * cml_x
+        ax.plot(cml_x, cml_y, color=AMBER, lw=1.2, ls="--",
+                alpha=0.7, zorder=2, label="Capital Market Line")
+
+        # — Special portfolios
+        ax.scatter(ms_vol, ms_ret, color=AMBER, s=140, zorder=5,
+                   marker="*", label=f"Max Sharpe  ({max_sharpe['sharpe']:.2f})")
+        ax.scatter(mv_vol, min_vol["expected_return"], color=RED, s=90,
+                   zorder=5, marker="D", label=f"Min Variance")
+
+        # — Annotations
+        ax.annotate(
+            f"  Max Sharpe\n  Ret={ms_ret:.1%}  Vol={ms_vol:.1%}",
+            (ms_vol, ms_ret), color=AMBER, fontsize=8,
+            xytext=(ms_vol + 0.01, ms_ret + 0.005),
+        )
+        ax.annotate(
+            f"  Min Var\n  Ret={min_vol['expected_return']:.1%}  Vol={mv_vol:.1%}",
+            (mv_vol, min_vol["expected_return"]), color=RED, fontsize=8,
+            xytext=(mv_vol + 0.01, min_vol["expected_return"] - 0.025),
+        )
+
+        ax.xaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=0))
+        ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=0))
+        ax.set_xlabel("Annualised Volatility (σ)", fontsize=10)
+        ax.set_ylabel("Annualised Expected Return (μ)", fontsize=10)
+        ax.set_title("Efficient Frontier — Markowitz MPT", fontsize=13, pad=14)
+        ax.legend(fontsize=8, framealpha=0.3, loc="upper left")
+        ax.grid(True, alpha=0.4)
+
+        plt.tight_layout()
+        if save_path:
+            fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        return fig
+
+
+def plot_weights(
+    portfolios: list[dict],
+    save_path: str | None = None,
+) -> plt.Figure:
+    """
+    Grouped bar chart of weight allocations for multiple portfolios.
+
+    Parameters
+    ----------
+    portfolios : list of dicts with 'label' and 'weights' keys
+    save_path  : if given, save figure to this path
+    """
+    tickers = list(portfolios[0]["weights"].keys())
+    n_tickers  = len(tickers)
+    n_ports    = len(portfolios)
+    x          = np.arange(n_tickers)
+    width      = 0.8 / n_ports
+    colours    = [TEAL, AMBER, RED, "#a78bfa", "#34d399"]
+
+    with plt.rc_context(_STYLE):
+        fig, ax = plt.subplots(figsize=(10, 5))
+
+        for i, port in enumerate(portfolios):
+            vals = [port["weights"].get(t, 0) for t in tickers]
+            offset = (i - (n_ports - 1) / 2) * width
+            bars = ax.bar(x + offset, vals, width=width * 0.9,
+                          label=port["label"], color=colours[i % len(colours)],
+                          alpha=0.85, zorder=3)
+            for bar, v in zip(bars, vals):
+                if v > 0.02:
+                    ax.text(bar.get_x() + bar.get_width() / 2,
+                            bar.get_height() + 0.005, f"{v:.0%}",
+                            ha="center", va="bottom", fontsize=7, color=WHITE)
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(tickers, fontsize=9)
+        ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=0))
+        ax.set_ylabel("Portfolio Weight", fontsize=10)
+        ax.set_title("Portfolio Allocations — Optimal Portfolios", fontsize=13, pad=12)
+        ax.legend(fontsize=9, framealpha=0.3)
+        ax.grid(axis="y", alpha=0.35)
+        ax.set_ylim(0, 1)
+
+        plt.tight_layout()
+        if save_path:
+            fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        return fig
