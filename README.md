@@ -1,4 +1,4 @@
-# F — Financial Engineering
+# Financial Engineering
 
 Derivatives pricing, hedging, and risk modelling.
 Mathematical finance from first principles.
