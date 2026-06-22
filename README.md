@@ -1,45 +1,53 @@
-# Financial Engineering
+# F — Financial Engineering
 
-A focused collection of financial engineering projects covering derivatives pricing, hedging, risk modelling, and volatility — built from first principles in Python.
+Derivatives pricing, hedging, and risk modelling.
+Mathematical finance from first principles.
 
-Each project is self-contained and delivers a Jupyter notebook, a reusable Python module, and a README with methodology, findings, and honest limitations.
+**github.com/wveratudela/financial-engineering** · *Dr. Walter Vera-Tudela*
 
 ---
 
-## Background & Motivation
+## Overview
 
-My background is in numerical modelling, optimisation, and scientific computing (Python, C++, MATLAB). This repository focuses specifically on the mathematical and computational side of financial instruments — pricing, hedging, and modelling the behaviour of derivatives and risk.
+Five projects covering the mathematical foundations of derivatives pricing and risk management: from option pricing via simulation through Greeks and dynamic hedging, yield curve construction, volatility surface modelling, and tail dependence via copulas. Each project is built from first principles and benchmarked against analytical solutions where they exist.
 
-The goal is not to survey the field. It is to go deep on a small number of problems, understand the theory from the ground up, and build tools that demonstrate both rigour and practical awareness.
+This work runs parallel to the empirical research in the **Q repo** and the control-theoretic methods in the **M repo**. The derivatives layer connects to both: volatility modelling feeds into regime detection, and hedging cost analysis informs rebalancing design.
 
 ---
 
 ## Repository Structure
-
 ```
 financial-engineering/
 │
-├── README.md                        ← You are here
+├── README.md                              ← You are here
 │
 ├── F1_monte_carlo_option_pricer/
 │   ├── F1_notebook.ipynb
 │   ├── F1_functions.py
 │   └── README.md
 │
-├── F2_greeks_and_dynamic_hedging/   ← Planned
-│   └── ...
+├── F2_greeks_dynamic_hedging/
+│   ├── F2_notebook.ipynb
+│   ├── F2_functions.py
+│   └── README.md
 │
-├── F3_yield_curve_and_fixed_income/ ← Planned
-│   └── ...
+├── F3_yield_curve_fixed_income/
+│   ├── F3_notebook.ipynb
+│   ├── F3_functions.py
+│   └── README.md
 │
-├── F4_volatility_surface/           ← Planned
-│   └── ...
+├── F4_volatility_surface/
+│   ├── F4_notebook.ipynb
+│   ├── F4_functions.py
+│   └── README.md
 │
-├── F5_copula_crash_dependence/      ← Planned
-│   └── ...
+├── F5_copula_tail_dependence/
+│   ├── F5_notebook.ipynb
+│   ├── F5_functions.py
+│   └── README.md
 │
 └── utils/
-    └── common.py                    ← Shared utilities
+    └── common.py                          ← Shared utilities (data fetching, pricing helpers)
 ```
 
 ---
@@ -48,52 +56,101 @@ financial-engineering/
 
 | # | Project | Status | Key Concept |
 |---|---------|--------|-------------|
-| F1 | Monte Carlo Option Pricer | 🔄 In progress | GBM simulation, risk-neutral pricing, Black-Scholes benchmarking |
-| F2 | Greeks & Dynamic Hedging | 📋 Planned | Delta/Gamma/Vega, hedging P&L simulation, hedging error analysis |
-| F3 | Yield Curve & Fixed Income | 📋 Planned | Bootstrapping, bond pricing, duration, convexity |
-| F4 | Volatility Surface Modelling | 📋 Planned | Implied vol, smile/skew, surface calibration |
-| F5 | Copula-Based Crash Dependence | 📋 Planned | Tail correlation, default dependence, stress-tested joint distributions |
+| F1 | Monte Carlo Option Pricer | 🔄 In Progress | GBM simulation, risk-neutral pricing, Black-Scholes benchmark |
+| F2 | Greeks & Dynamic Hedging | 📋 Planned | Delta/Gamma/Vega sensitivities, hedging cost, P&L simulation |
+| F3 | Yield Curve & Fixed Income | 📋 Planned | Curve bootstrapping, bond pricing, duration, convexity |
+| F4 | Volatility Surface Modelling | 📋 Planned | Implied vol extraction, smile/skew, surface calibration |
+| F5 | Copula-Based Crash Dependence | 📋 Planned | Tail correlation, Gaussian/t/Clayton copulas, stress scenarios |
 
 ---
 
-## Project Arc
-
-The five projects form a deliberate progression — each one exposing a limitation of the last:
-
-**F1** prices a European option assuming constant volatility and a single underlying. It works. But it immediately raises two questions: how do you hedge it, and what happens when volatility isn't constant?
-
-**F2** answers the first question. A priced option is only useful if you can manage the risk it introduces. Delta hedging neutralises directional exposure — but only imperfectly, and the cost of that imperfection compounds over time.
-
-**F3** introduces rates as a first-class variable. Option pricing discounts future payoffs — but at what rate? Bootstrapping a yield curve from real treasury data and pricing fixed income instruments grounds the discount factor in reality.
-
-**F4** answers the constant volatility problem. Implied volatility is not flat — it forms a surface across strikes and maturities. Calibrating that surface is one of the core problems in derivatives risk management.
-
-**F5** addresses the hardest problem: what happens in a crash, when correlations between instruments stop behaving as they do in normal markets? Copulas model the dependence structure in the tails, directly relevant to reinsurance, credit risk, and portfolio stress testing.
-
----
-
-## Key Findings
-
-*This section will be updated as projects are completed. Results are added only once verified — no placeholder metrics.*
+## Projects
 
 ### F1 — Monte Carlo Option Pricer *(in progress)*
+`Python · numpy · scipy`
 
-*Findings to be documented on completion.*
+European option pricing via Geometric Brownian Motion simulation, benchmarked against the Black-Scholes closed-form solution. Covers risk-neutral pricing, convergence analysis as a function of simulation count, and volatility sensitivity.
+
+**Research questions:** How many paths are needed for pricing accuracy within 1bp? How does simulation error scale with moneyness and time to expiry? What does constant-volatility GBM miss that the later projects (F4) address?
+
+*This project establishes the simulation infrastructure and constant-vol baseline that F2–F4 extend and stress-test.*
+
+---
+
+### F2 — Greeks & Dynamic Hedging *(planned)*
+`Python · numpy · matplotlib`
+
+Analytical and numerical computation of Delta, Gamma, Vega, Theta, and Rho. P&L simulation of a dynamically delta-hedged options position across a range of rehedging frequencies.
+
+**Research questions:** How does hedging error accumulate over time? What is the actual cost of maintaining a delta-neutral book under discrete rehedging? How does Gamma exposure drive P&L between rehedge points?
+
+*Connects derivative sensitivities to practical risk management — the translation from model to desk.*
+
+---
+
+### F3 — Yield Curve & Fixed Income *(planned)*
+`Python · numpy · scipy`
+
+Bootstrapping a par yield curve from real US Treasury data, pricing zero-coupon and coupon bonds, computing duration and convexity, and pricing interest rate swaps.
+
+**Research questions:** How sensitive is bond pricing to curve shape assumptions? What does the 2022 rate shock look like through a duration/convexity lens? How does TLT's Q4 behaviour (60% of tail loss in 2022) decompose in fixed income terms?
+
+*Grounds the discount factor in real market data and introduces rates as a first-class variable — the foundation for credit derivatives in F5.*
+
+---
+
+### F4 — Volatility Surface Modelling *(planned)*
+`Python · numpy · scipy · matplotlib`
+
+Implied volatility extraction from option chain data across strikes and maturities. Smile and skew analysis. Surface interpolation and basic calibration.
+
+**Research questions:** What does the volatility surface look like around earnings announcements vs quiet markets? How does the surface shift before and after the COVID crash? How much pricing error does constant-vol GBM (F1) introduce on OTM puts?
+
+*Breaks the central assumption of F1 and directly motivates the jump-diffusion and stochastic vol extensions that underlie modern options desks.*
+
+---
+
+### F5 — Copula-Based Crash Dependence *(planned)*
+`Python · scipy · numpy`
+
+Tail correlation modelling using Gaussian, Student-t, and Clayton copulas. Analysis of pairwise and portfolio-level tail dependence during stress scenarios (2020 COVID, 2022 rates, 2008 financial crisis).
+
+**Research questions:** Which asset pairs exhibit tail dependence that their unconditional correlations hide? Does the diversification observed in Q3 survive in the tail? How does the copula structure shift between crisis and non-crisis regimes?
+
+*Assets that appear uncorrelated in normal markets crash together — this project makes that dependence explicit and connects directly to the stress testing findings in Q4.*
+
+---
+
+## Research Positioning
+
+> *"The Q repo tests what works empirically. This repo asks why — and what the mathematics predicts when markets break."*
+
+F1–F3 build the pricing and rates foundations. F4 connects to the volatility regime work in Q4 and M. F5 closes the loop on tail risk by modelling the dependence structure that MC VaR (Q4) cannot capture.
 
 ---
 
 ## Tech Stack
 
 | Tool | Purpose |
-|------|---------|
+|---|---|
 | Python 3.x | Core language |
-| Jupyter Notebook | Research environment |
-| NumPy & pandas | Numerical computing and data handling |
-| SciPy | Statistical distributions, optimisation |
-| matplotlib | Visualisation |
-| arch | GARCH volatility modelling (F4) |
-| cvxpy | Convex optimisation where needed |
-| yfinance | Market data |
+| numpy & scipy | Numerical methods, optimisation, statistical distributions |
+| matplotlib | Visualisation, surface plots |
+| pandas | Data handling for real market inputs |
+
+All projects built from first principles. No black-box pricing libraries — the goal is to understand the machinery, not call a function.
+
+---
+
+## Related Repositories
+
+| Repo | Focus |
+|---|---|
+| [Q — Quant Research](https://github.com/wveratudela/quant-research) | Signal generation, portfolio optimisation, tail risk, ML signals |
+
+---
+
+*Dr. Walter Vera-Tudela · [github.com/wveratudela](https://github.com/wveratudela)*
 
 ---
 
