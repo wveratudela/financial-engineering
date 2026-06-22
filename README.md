@@ -146,7 +146,8 @@ All projects built from first principles. No black-box pricing libraries — the
 
 | Repo | Focus |
 |---|---|
-| [Q — Quant Research](https://github.com/wveratudela/quant-research) | Signal generation, portfolio optimisation, tail risk, ML signals |
+| [Quant Research](https://github.com/wveratudela/quant-research) | Signal generation, portfolio optimisation, tail risk, ML signals |
+| [Mathematical Methods](https://github.com/wveratudela/mathematical-methods) | Control theory, Kalman filters, robust optimisation, Riemannian geometry applied to portfolio management |
 
 ---
 
